@@ -5,19 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>T5S3 PocketOS — Web Flasher</title>
 <style>
-  :root {
-    --bg:      #1C1C1E;
-    --surface: #2C2C2E;
-    --orange:  #FF9500;
-    --text:    #F2F2F7;
-    --muted:   #8E8E93;
-    --error:   #FF453A;
-    --success: #30D158;
-  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: var(--bg);
-    color: var(--text);
+    background: #fff;
+    color: #000;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     min-height: 100vh;
     display: flex;
@@ -26,106 +17,97 @@
     padding: 24px;
   }
   .card {
-    background: var(--surface);
-    border-radius: 20px;
+    border: 2px solid #000;
+    border-radius: 12px;
     padding: 40px 36px;
     max-width: 520px;
     width: 100%;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
   }
   .logo {
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--orange);
-    margin-bottom: 8px;
+    color: #555;
+    margin-bottom: 6px;
   }
-  h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
-  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; line-height: 1.5; }
+  h1 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .subtitle { color: #555; font-size: 14px; margin-bottom: 32px; line-height: 1.6; }
 
-  /* Warning banner */
   #no-serial-warn {
     display: none;
-    background: rgba(255,69,58,0.12);
-    border: 1px solid var(--error);
-    border-radius: 10px;
+    border: 1.5px solid #000;
+    border-radius: 8px;
     padding: 14px 16px;
     font-size: 13px;
-    color: var(--error);
     margin-bottom: 24px;
     line-height: 1.5;
   }
-  #no-serial-warn a { color: var(--error); }
 
-  /* Flash button */
   #flash-btn {
     width: 100%;
     padding: 18px;
-    background: var(--orange);
-    color: #000;
+    background: #000;
+    color: #fff;
     border: none;
-    border-radius: 14px;
+    border-radius: 8px;
     font-size: 17px;
     font-weight: 700;
     cursor: pointer;
-    transition: opacity 0.15s, transform 0.1s;
+    transition: opacity 0.15s;
     margin-bottom: 20px;
+    letter-spacing: 0.01em;
   }
-  #flash-btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
-  #flash-btn:active:not(:disabled) { transform: translateY(0); }
-  #flash-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #flash-btn:hover:not(:disabled) { opacity: 0.75; }
+  #flash-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 
-  /* Progress */
-  #progress-wrap {
-    display: none;
-    margin-bottom: 20px;
-  }
+  #progress-wrap { display: none; margin-bottom: 20px; }
   .progress-label {
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
-    color: var(--muted);
+    font-size: 12px;
+    color: #555;
     margin-bottom: 8px;
+    font-weight: 500;
   }
   .progress-bar-bg {
-    background: rgba(255,255,255,0.08);
+    background: #e0e0e0;
     border-radius: 999px;
-    height: 8px;
+    height: 6px;
     overflow: hidden;
   }
   #progress-bar {
     height: 100%;
-    background: var(--orange);
+    background: #000;
     border-radius: 999px;
     width: 0%;
     transition: width 0.2s;
   }
 
-  /* Log */
   #log {
-    background: rgba(0,0,0,0.3);
-    border-radius: 10px;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 8px;
     padding: 14px 16px;
     font-family: "SF Mono", "Fira Code", monospace;
     font-size: 12px;
-    line-height: 1.7;
-    color: var(--muted);
+    line-height: 1.8;
+    color: #333;
     max-height: 220px;
     overflow-y: auto;
-    min-height: 60px;
+    min-height: 56px;
+    background: #fafafa;
   }
-  #log .ok    { color: var(--success); }
-  #log .err   { color: var(--error); }
-  #log .info  { color: var(--orange); }
+  #log .ok  { color: #000; font-weight: 600; }
+  #log .err { color: #000; font-weight: 600; text-decoration: underline; }
+  #log .info{ color: #555; }
 
   .footer {
-    margin-top: 24px;
-    font-size: 12px;
-    color: var(--muted);
+    margin-top: 20px;
+    font-size: 11px;
+    color: #aaa;
     text-align: center;
   }
-  .footer a { color: var(--muted); }
+  .footer a { color: #aaa; }
 </style>
 </head>
 <body>
@@ -133,17 +115,16 @@
   <div class="logo">LILYGO T5-S3 Pro</div>
   <h1>PocketOS Flasher</h1>
   <p class="subtitle">
-    Plug in your device via USB, click Flash, and follow the prompts.<br>
-    No tools or drivers needed — Chrome / Edge only.
+    Plug in your device via USB, click Flash, and select the serial port.<br>
+    Chrome or Edge required — no drivers or tools needed.
   </p>
 
   <div id="no-serial-warn">
-    ⚠️ Your browser doesn't support <strong>Web Serial API</strong>.<br>
-    Please use <a href="https://www.google.com/chrome/" target="_blank">Chrome</a> or
-    <a href="https://www.microsoft.com/edge" target="_blank">Edge</a> (desktop, version 89+).
+    ⚠️ Web Serial API not supported.<br>
+    Please use <strong>Chrome</strong> or <strong>Edge</strong> (desktop, v89+).
   </div>
 
-  <button id="flash-btn">⚡ Flash PocketOS</button>
+  <button id="flash-btn">Flash PocketOS</button>
 
   <div id="progress-wrap">
     <div class="progress-label">
@@ -163,8 +144,9 @@
   </div>
 </div>
 
-<script src="https://unpkg.com/esptool-js@0.6.0/bundle.js"></script>
-<script>
+<script type="module">
+import { ESPLoader, Transport } from "https://unpkg.com/esptool-js@0.6.0/bundle.js";
+
 const PARTITIONS = [
   { address: 0x0000,  url: "bootloader.bin" },
   { address: 0x8000,  url: "partitions.bin"  },
@@ -172,14 +154,13 @@ const PARTITIONS = [
   { address: 0x10000, url: "firmware.bin"    },
 ];
 
-const btn         = document.getElementById("flash-btn");
-const log         = document.getElementById("log");
-const progressWrap= document.getElementById("progress-wrap");
-const progressBar = document.getElementById("progress-bar");
-const progressText= document.getElementById("progress-text");
-const progressPct = document.getElementById("progress-pct");
+const btn          = document.getElementById("flash-btn");
+const log          = document.getElementById("log");
+const progressWrap = document.getElementById("progress-wrap");
+const progressBar  = document.getElementById("progress-bar");
+const progressText = document.getElementById("progress-text");
+const progressPct  = document.getElementById("progress-pct");
 
-// Check Web Serial support
 if (!("serial" in navigator)) {
   document.getElementById("no-serial-warn").style.display = "block";
   btn.disabled = true;
@@ -195,7 +176,7 @@ function addLog(msg, cls = "") {
 
 function setProgress(pct, label) {
   progressBar.style.width = pct + "%";
-  progressPct.textContent  = pct + "%";
+  progressPct.textContent  = Math.round(pct) + "%";
   progressText.textContent = label;
 }
 
@@ -204,63 +185,69 @@ async function fetchBinary(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
   const buf = await resp.arrayBuffer();
+  // esptool-js expects base64-encoded strings
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   addLog(`  ${url}: ${buf.byteLength} bytes`, "ok");
-  return buf;
+  return btoa(bin);
 }
 
 btn.addEventListener("click", async () => {
   log.innerHTML = "";
   btn.disabled = true;
   progressWrap.style.display = "block";
-  setProgress(0, "Connecting…");
+  setProgress(0, "Loading firmware…");
 
   try {
-    // Load all binaries first
     addLog("Loading firmware files…", "info");
-    const files = [];
+    const fileArray = [];
     for (let i = 0; i < PARTITIONS.length; i++) {
       const p = PARTITIONS[i];
       const data = await fetchBinary(p.url);
-      files.push({ data: new Uint8Array(data), address: p.address });
-      setProgress(Math.round((i + 1) / PARTITIONS.length * 20), "Loading…");
+      fileArray.push({ data, address: p.address });
+      setProgress((i + 1) / PARTITIONS.length * 20, "Loading…");
     }
 
-    // Connect
     addLog("Requesting serial port…", "info");
     const port = await navigator.serial.requestPort();
-    addLog("Port selected. Connecting to ESP32…", "info");
 
+    const transport = new Transport(port, true);
     const esploader = new ESPLoader({
-      port,
+      transport,
       baudrate: 921600,
-      romBaudrate: 115200,
-      enableTracing: false,
+      terminal: {
+        clean()       {},
+        writeLine(s)  { addLog(s, "info"); },
+        write(s)      { addLog(s, "info"); },
+      },
     });
 
-    await esploader.main();
-    addLog(`Connected: ${esploader.chip.CHIP_NAME}`, "ok");
-    setProgress(25, "Erasing…");
+    addLog("Connecting to ESP32…", "info");
+    const chip = await esploader.main();
+    addLog(`Connected: ${chip}`, "ok");
+    setProgress(25, "Erasing flash…");
 
     await esploader.eraseFlash();
     addLog("Flash erased.", "ok");
     setProgress(30, "Writing firmware…");
 
     await esploader.writeFlash({
-      fileArray: files,
-      flashSize: "keep",
-      flashFreq: "keep",
-      flashMode: "keep",
-      eraseAll: false,
-      compress: true,
-      reportProgress: (fileIndex, written, total) => {
-        const filePct = written / total;
-        const overall = 30 + Math.round((fileIndex / files.length + filePct / files.length) * 65);
-        setProgress(Math.min(overall, 95), `Writing ${PARTITIONS[fileIndex].url}…`);
+      fileArray,
+      flashSize:  "keep",
+      flashFreq:  "keep",
+      flashMode:  "keep",
+      eraseAll:   false,
+      compress:   true,
+      reportProgress(i, written, total) {
+        const pct = 30 + (i / fileArray.length + written / total / fileArray.length) * 65;
+        setProgress(Math.min(pct, 95), `Writing ${PARTITIONS[i].url}…`);
       },
     });
 
     setProgress(100, "Done!");
-    addLog("✓ Firmware flashed successfully! Rebooting…", "ok");
+    addLog("✓ Firmware written successfully!", "ok");
+
     await esploader.hardReset();
     addLog("✓ Device rebooted.", "ok");
 
