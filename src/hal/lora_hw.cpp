@@ -1,6 +1,6 @@
 #include "lora_hw.h"
 
-SPIClass LoRaHW::_spi(3);  // 3 = VSPI (renamed SPI3 in newer Arduino-ESP32)
+SPIClass LoRaHW::_spi(1);  // ESP32-S3: HSPI=1 (SPI3_HOST) — separate bus from EPD (FSPI=0)
 SX1262   LoRaHW::_radio = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY, LoRaHW::_spi);
 
 static volatile bool _rxFlag = false;

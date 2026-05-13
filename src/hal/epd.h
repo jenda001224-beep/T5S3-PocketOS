@@ -31,7 +31,7 @@ private:
     void     writeCmd(uint16_t cmd);
     void     writeWord(uint16_t data);
     uint16_t readWord();
-    void     waitBusy();
+    bool     waitBusy(uint32_t timeoutMs = 3000);
     uint16_t sendCmdArg(uint16_t cmd, const uint16_t* args, int n);
     void     loadImgArea(const uint8_t* data, uint16_t x, uint16_t y, uint16_t w, uint16_t h);
     void     displayArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h, EPDMode mode);

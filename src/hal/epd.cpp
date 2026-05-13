@@ -1,6 +1,7 @@
 #include "epd.h"
 
-SPIClass EPD::_spi(HSPI);
+// ESP32-S3: FSPI=0 (SPI2), HSPI=1 (SPI3). EPD is on SPI0 pins → use FSPI.
+SPIClass EPD::_spi(0);
 
 // IT8951 SPI preambles
 #define PRE_CMD  0x6000
@@ -29,8 +30,16 @@ EPD& EPD::instance() {
     return inst;
 }
 
-void EPD::waitBusy() {
-    while (digitalRead(EPD_BUSY) == LOW) delay(1);
+bool EPD::waitBusy(uint32_t timeoutMs) {
+    uint32_t start = millis();
+    while (digitalRead(EPD_BUSY) == LOW) {
+        if (millis() - start > timeoutMs) {
+            Serial.println("[EPD] waitBusy TIMEOUT");
+            return false;
+        }
+        delay(1);
+    }
+    return true;
 }
 
 void EPD::writeCmd(uint16_t cmd) {
@@ -58,7 +67,7 @@ uint16_t EPD::readWord() {
     _spi.beginTransaction(SPISettings(SPI_FREQ, MSBFIRST, SPI_MODE0));
     digitalWrite(EPD_CS, LOW);
     _spi.transfer16(PRE_RD);
-    _spi.transfer16(0);       // dummy
+    _spi.transfer16(0);  // dummy word required by IT8951
     uint16_t v = _spi.transfer16(0);
     digitalWrite(EPD_CS, HIGH);
     _spi.endTransaction();
@@ -82,26 +91,35 @@ bool EPD::begin() {
 
     _spi.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
 
-    // Hardware reset
-    digitalWrite(EPD_RST, LOW);  delay(100);
-    digitalWrite(EPD_RST, HIGH); delay(100);
-    waitBusy();
+    // Hardware reset — longer pulse for reliable IT8951 init
+    digitalWrite(EPD_RST, LOW);  delay(200);
+    digitalWrite(EPD_RST, HIGH); delay(200);
 
-    // Get device info
-    writeCmd(0x0302);
-    uint16_t w  = readWord();
-    uint16_t h  = readWord();
-    _imgBufAddr = ((uint32_t)readWord() << 16) | readWord();
-    // skip firmware/lut version words
-    readWord(); readWord(); readWord(); readWord();
+    if (!waitBusy(5000)) {
+        Serial.println("[EPD] Not responding after reset");
+        return false;
+    }
 
-    _panelW = w;
-    _panelH = h;
-
-    // Set pixel format to 4bpp packed
+    // SYS_RUN must come before GetDeviceInfo
     writeCmd(IT8951_TCON_SYS_RUN);
+    delay(10);
 
-    // vcom (adjust to your panel, typically -2.0V → 2000)
+    // Get device info (cmd 0x0302)
+    writeCmd(0x0302);
+    uint16_t w     = readWord();  // panel width
+    uint16_t h     = readWord();  // panel height
+    uint16_t addrL = readWord();  // imgBufAddr low word
+    uint16_t addrH = readWord();  // imgBufAddr high word
+    // skip firmware version (8 words) + LUT version (8 words)
+    for (int i = 0; i < 16; i++) readWord();
+
+    _panelW     = w ? w : EPD_W;
+    _panelH     = h ? h : EPD_H;
+    _imgBufAddr = ((uint32_t)addrH << 16) | addrL;  // correct byte order
+
+    Serial.printf("[EPD] panel=%dx%d imgBuf=0x%08X\n", _panelW, _panelH, _imgBufAddr);
+
+    // VCOM: set to -2.0V (typical for LILYGO 4.7" panel = 2000)
     writeCmd(0x0039);
     writeWord(2000);
 
