@@ -248,8 +248,8 @@ btn.addEventListener("click", async () => {
     setProgress(100, "Done!");
     addLog("✓ Firmware written successfully!", "ok");
 
-    await esploader.hardReset();
-    addLog("✓ Device rebooted.", "ok");
+    await transport.disconnect();
+    addLog("✓ Done. Disconnect and reconnect USB to reboot.", "ok");
 
   } catch (err) {
     addLog("Error: " + err.message, "err");
