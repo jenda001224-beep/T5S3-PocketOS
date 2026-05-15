@@ -23,7 +23,7 @@ SPIClass EPD::_spi(0);
 #define LISAR_L    (REG_BASE + 0x0208)
 #define LISAR_H    (REG_BASE + 0x020A)
 
-#define SPI_FREQ   20000000
+#define SPI_FREQ   10000000  // 10 MHz — safer for IT8951 over long cables
 
 EPD& EPD::instance() {
     static EPD inst;
@@ -31,8 +31,9 @@ EPD& EPD::instance() {
 }
 
 bool EPD::waitBusy(uint32_t timeoutMs) {
+    // IT8951 HRDY: HIGH = busy, LOW = ready (LILYGO board inverts the signal)
     uint32_t start = millis();
-    while (digitalRead(EPD_BUSY) == LOW) {
+    while (digitalRead(EPD_BUSY) == HIGH) {
         if (millis() - start > timeoutMs) {
             Serial.println("[EPD] waitBusy TIMEOUT");
             return false;

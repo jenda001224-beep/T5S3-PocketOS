@@ -80,12 +80,21 @@ void splashScreen() {
 
 void setup() {
     Serial.begin(115200);
+    // USB CDC needs ~1s to enumerate before output is visible
+    delay(1500);
+    Serial.println("\n\n=== PocketOS boot ===");
+    Serial.flush();
 
     // ── Display first (so we can show status) ─────────────────────────────────
+    Serial.println("[BOOT] EPD init...");
+    Serial.flush();
     if (!EPD::instance().begin()) {
-        Serial.println("EPD INIT FAILED");
+        Serial.println("[BOOT] EPD INIT FAILED — check SPI wiring");
+        Serial.flush();
         while (true) delay(1000);
     }
+    Serial.println("[BOOT] EPD OK");
+    Serial.flush();
     Canvas::instance().begin();
     splashScreen();
 
