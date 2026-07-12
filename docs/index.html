@@ -142,7 +142,7 @@
 <div class="card">
   <div class="logo">LILYGO T5 E-Paper S3 Pro</div>
   <h1>PocketOS Flasher</h1>
-  <div id="fw-version">Firmware: PocketOS v1.1 · FastEPD · 40&nbsp;MHz flash · build 2026-07-13</div>
+  <div id="fw-version">PocketOS v1.1 · app on factory boot-chain · build 2026-07-13b</div>
   <p class="subtitle">
     PocketOS v1.1 — FastEPD display driver, correct pinout, and 14 apps
     (Books · Maps · LoRa · Clock · Chess · Conquest · Browser · Notes ·
@@ -279,9 +279,9 @@ btn.addEventListener("click", async () => {
 
     await esploader.writeFlash({
       fileArray,
-      flashSize:  "16MB",
-      flashFreq:  "40m",   // 80 MHz caused an "invalid header" ROM boot loop on this board
-      flashMode:  "dio",
+      flashSize:  "keep",   // bootloader is the proven factory one (16MB/DIO/80MHz) — don't repatch
+      flashFreq:  "keep",
+      flashMode:  "keep",
       eraseAll:   false,
       compress:   true,
       reportProgress(i, written, total) {
