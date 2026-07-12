@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>T5S3 PocketOS — Web Flasher</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -227,7 +230,8 @@ function setProgress(pct, label) {
 
 async function fetchBinary(url) {
   addLog(`Fetching ${url}…`);
-  const resp = await fetch(url);
+  // Cache-bust so the device always gets the freshly-deployed binary.
+  const resp = await fetch(url + "?cb=" + Date.now(), { cache: "no-store" });
   if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
   const buf = await resp.arrayBuffer();
   // esptool-js expects base64-encoded strings
