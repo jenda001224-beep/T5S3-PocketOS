@@ -48,7 +48,7 @@ void SettingsApp::loadConfig() {
         _cfg.loraFreq      = LORA_FREQ;
         _cfg.gpsEnabled    = true;
         _cfg.wifiEnabled   = false;
-        _cfg.deepSleepAuto = true;
+        _cfg.deepSleepAuto = false;   // off by default (deep sleep has no touch wake yet)
         _cfg.sleepSec      = 300;
         _cfg.invertColors  = false;
         strncpy(_cfg.deviceName, "PocketOS", 31);
@@ -64,7 +64,7 @@ void SettingsApp::loadConfig() {
     _cfg.loraFreq      = doc["loraFreq"]     | LORA_FREQ;
     _cfg.gpsEnabled    = doc["gpsEnabled"]   | true;
     _cfg.wifiEnabled   = doc["wifiEnabled"]  | false;
-    _cfg.deepSleepAuto = doc["autoSleep"]    | true;
+    _cfg.deepSleepAuto = doc["autoSleep"]    | false;
     _cfg.sleepSec      = doc["sleepSec"]     | 300;
     _cfg.invertColors  = doc["invertColors"] | false;
     strncpy(_cfg.deviceName, doc["deviceName"] | "PocketOS", 31);

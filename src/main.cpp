@@ -97,34 +97,55 @@ void setup() {
     Serial.begin(115200);
     // USB CDC needs ~1s to enumerate before output is visible
     delay(1500);
-    Serial.println("\n\n=== PocketOS boot ===");
+    Serial.println("\n\n=== PocketOS boot (v1.1 FastEPD) ===");
+    Serial.printf("[BOOT] chip=%s rev=%d cpu=%dMHz psram=%uKB free=%uKB heap=%uKB\n",
+        ESP.getChipModel(), ESP.getChipRevision(), ESP.getCpuFreqMHz(),
+        ESP.getPsramSize()/1024, ESP.getFreePsram()/1024, ESP.getFreeHeap()/1024);
     Serial.flush();
 
-    // ── Display first (so we can show status) ─────────────────────────────────
-    Serial.println("[BOOT] EPD init...");
+    // ── Display via FastEPD ───────────────────────────────────────────────────
+    Serial.println("[BOOT] EPD init (FastEPD EPDIY_V7)...");
     Serial.flush();
-    if (!EPD::instance().begin()) {
-        Serial.println("[BOOT] EPD INIT FAILED — check SPI wiring");
-        Serial.flush();
-        while (true) delay(1000);
+    EPD::instance().begin();
+    Serial.printf("[BOOT] EPD done: ok=%d %dx%d\n",
+        EPD::instance().ok(), EPD::instance().panelW(), EPD::instance().panelH());
+    Serial.flush();
+
+    Serial.println("[BOOT] Canvas alloc...");
+    Serial.flush();
+    if (!Canvas::instance().begin()) {
+        Serial.println("[BOOT] Canvas PSRAM alloc FAILED");
     }
-    Serial.println("[BOOT] EPD OK");
     Serial.flush();
-    Canvas::instance().begin();
     splashScreen();
+    Serial.println("[BOOT] splash drawn");
+    Serial.flush();
 
     // ── Storage ───────────────────────────────────────────────────────────────
+    Serial.println("[BOOT] SD init...");
+    Serial.flush();
     if (!Storage::instance().begin()) {
-        Serial.println("SD mount failed — continuing without SD");
+        Serial.println("[BOOT] SD mount failed — continuing without SD");
+    } else {
+        Serial.println("[BOOT] SD OK");
     }
+    Serial.flush();
 
     // ── Touch (shares I2C with FastEPD's expander) ────────────────────────────
+    Serial.println("[BOOT] Touch init...");
+    Serial.flush();
     if (!Touch::instance().begin()) {
-        Serial.println("Touch init failed");
+        Serial.println("[BOOT] Touch init FAILED");
     }
+    Serial.flush();
 
     // ── Power: BQ25896 battery ADC + PCF8563 RTC (same I2C bus) ────────────────
+    Serial.println("[BOOT] Power (BQ25896/PCF8563) init...");
+    Serial.flush();
     Power::instance().begin();
+    Serial.printf("[BOOT] Power: bq=%d rtc=%d\n",
+        Power::instance().bqPresent(), Power::instance().rtcPresent());
+    Serial.flush();
 
     // ── Load config from SD (needs it now, before any app opens) ──────────────
     SettingsApp::loadConfigStatic();
@@ -193,12 +214,26 @@ void setup() {
     HomeScreen::instance().begin(APPS, APP_COUNT);
 
     // ── Start ─────────────────────────────────────────────────────────────────
+    Serial.println("[BOOT] setup complete — entering loop, drawing home screen");
+    Serial.flush();
     delay(800);  // let splash breathe
     am.begin();  // shows home screen
 }
 
 void loop() {
     AppManager::instance().loop();
+
+    // Heartbeat every 3 s so the serial monitor always shows the device is alive
+    // (and where it is) even when the e-paper isn't visibly changing.
+    static uint32_t lastHB = 0;
+    if (millis() - lastHB > 3000) {
+        lastHB = millis();
+        Serial.printf("[HB] up=%lus epd_ok=%d %dx%d heap=%uKB psram=%uKB\n",
+            millis()/1000, EPD::instance().ok(),
+            EPD::instance().panelW(), EPD::instance().panelH(),
+            ESP.getFreeHeap()/1024, ESP.getFreePsram()/1024);
+        Serial.flush();
+    }
 
     // Keep touch polling fast, yield to RTOS between frames
     vTaskDelay(pdMS_TO_TICKS(16));
