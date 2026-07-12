@@ -6,31 +6,58 @@ Touch& Touch::instance() {
 }
 
 bool Touch::readGT911(uint8_t* buf, uint16_t reg, uint8_t len) {
-    Wire.beginTransmission(TOUCH_ADDR);
+    Wire.beginTransmission(_addr);
     Wire.write(reg >> 8);
     Wire.write(reg & 0xFF);
     if (Wire.endTransmission() != 0) return false;
-    Wire.requestFrom((uint8_t)TOUCH_ADDR, len);
+    Wire.requestFrom(_addr, len);
     for (int i = 0; i < len && Wire.available(); i++) buf[i] = Wire.read();
     return true;
 }
 
 void Touch::writeGT911(uint16_t reg, uint8_t val) {
-    Wire.beginTransmission(TOUCH_ADDR);
+    Wire.beginTransmission(_addr);
     Wire.write(reg >> 8);
     Wire.write(reg & 0xFF);
     Wire.write(val);
     Wire.endTransmission();
 }
 
-bool Touch::begin() {
-    Wire.begin(TOUCH_SDA, TOUCH_SCL, 400000);
-    if (TOUCH_INT >= 0) pinMode(TOUCH_INT, INPUT);
+bool Touch::probe(uint8_t addr) {
+    Wire.beginTransmission(addr);
+    return Wire.endTransmission() == 0;
+}
 
-    // Try GT911 at both addresses
-    Wire.beginTransmission(TOUCH_ADDR);
-    bool ok = (Wire.endTransmission() == 0);
-    if (!ok) return false;
+// GT911 latches its I2C address from the INT level during the RST rising edge:
+// INT high -> 0x14, INT low -> 0x5D.
+void Touch::hwReset(bool pickPrimaryAddr) {
+    pinMode(TOUCH_RST, OUTPUT);
+    pinMode(TOUCH_INT, OUTPUT);
+    digitalWrite(TOUCH_RST, LOW);
+    digitalWrite(TOUCH_INT, pickPrimaryAddr ? HIGH : LOW);
+    delay(12);
+    digitalWrite(TOUCH_RST, HIGH);
+    delay(12);
+    pinMode(TOUCH_INT, INPUT);   // release INT for interrupt/idle use
+    delay(60);
+}
+
+bool Touch::begin() {
+    // FastEPD already brought up Wire on the shared bus; re-assert pins anyway.
+    Wire.begin(TOUCH_SDA, TOUCH_SCL, 400000);
+
+    // Reset selecting the primary address, then fall back to the alternate.
+    hwReset(true);
+    _addr = 0x14;
+    if (!probe(_addr)) {
+        hwReset(false);
+        _addr = 0x5D;
+        if (!probe(_addr)) {
+            // last resort: probe both without a reset
+            _addr = 0x14; if (!probe(_addr)) { _addr = 0x5D; if (!probe(_addr)) return false; }
+        }
+    }
+    Serial.printf("[TOUCH] GT911 @ 0x%02X\n", _addr);
 
     // Issue soft reset and configure 960×540 resolution
     writeGT911(0x8040, 0x02);  // soft reset

@@ -15,6 +15,7 @@ public:
 private:
     StatusBar() = default;
     uint8_t _battery    = 100;
+    bool    _charging   = false;
     bool    _loraActive = false;
     bool    _gpsFix     = false;
     bool    _wifi       = false;

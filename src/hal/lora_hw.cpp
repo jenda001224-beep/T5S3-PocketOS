@@ -1,7 +1,8 @@
 #include "lora_hw.h"
 
-SPIClass LoRaHW::_spi(1);  // ESP32-S3: HSPI=1 (SPI3_HOST) — separate bus from EPD (FSPI=0)
-SX1262   LoRaHW::_radio = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY, LoRaHW::_spi);
+// LoRa shares the board SPI bus with the SD card (SD is brought up first in
+// main.cpp, which calls SPI.begin on the board pins).
+SX1262   LoRaHW::_radio = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY, SPI);
 
 static volatile bool _rxFlag = false;
 
@@ -13,7 +14,9 @@ LoRaHW& LoRaHW::instance() {
 }
 
 bool LoRaHW::begin() {
-    _spi.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_CS);
+    // SPI bus already initialised by Storage::begin(); make sure it exists even
+    // if the SD card was absent.
+    SPI.begin(BOARD_SPI_SCLK, BOARD_SPI_MISO, BOARD_SPI_MOSI);
 
     int state = _radio.begin(
         LORA_FREQ,   // MHz
@@ -31,6 +34,20 @@ bool LoRaHW::begin() {
     _radio.startReceive();
     _ready = true;
     return true;
+}
+
+void LoRaHW::setEnabled(bool on) {
+    if (!_ready) return;
+    _enabled = on;
+    if (on) _radio.startReceive();
+    else    _radio.sleep();
+}
+
+bool LoRaHW::setFrequency(float mhz) {
+    if (!_ready) return false;
+    int st = _radio.setFrequency(mhz);
+    _radio.startReceive();
+    return st == RADIOLIB_ERR_NONE;
 }
 
 bool LoRaHW::send(const String& msg) {

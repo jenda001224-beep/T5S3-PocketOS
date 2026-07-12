@@ -1,5 +1,6 @@
 #include "statusbar.h"
 #include "canvas.h"
+#include "../hal/power_hw.h"
 #include <time.h>
 
 StatusBar& StatusBar::instance() {
@@ -11,6 +12,13 @@ void StatusBar::tick() {
     time_t now = time(nullptr);
     struct tm* t = localtime(&now);
     snprintf(_timeBuf, sizeof(_timeBuf), "%02d:%02d", t->tm_hour, t->tm_min);
+
+    // Battery from the BQ25896 (if present).
+    if (Power::instance().bqPresent()) {
+        BatteryInfo b = Power::instance().battery();
+        _battery  = b.percent;
+        _charging = b.charging || b.usb;
+    }
 }
 
 void StatusBar::draw() {
@@ -30,9 +38,10 @@ void StatusBar::draw() {
     int fill = (int)((_battery / 100.0f) * 24);
     uint8_t col = _battery < 20 ? C_MID : C_WHITE;
     cv.fillRect(bx + 2, by + 2, fill, 8, col);
+    if (_charging) cv.drawText(bx + 9, by + 2, "+", C_BLACK, C_WHITE, 1);
 
     // Battery percent text
-    char bpct[5]; snprintf(bpct, sizeof(bpct), "%d%%", _battery);
+    char bpct[6]; snprintf(bpct, sizeof(bpct), "%d%%", _battery);
     cv.drawText(bx - 32, by, bpct, C_WHITE, C_BLACK, 1);
 
     // GPS icon

@@ -23,8 +23,8 @@ private:
     String stripHTML(const String& html);
 
     State   _state    = URL_INPUT;
-    char    _url[128] = "http://lite.cnn.com";
-    int     _urlLen   = 20;
+    char    _url[128] = "google.com";
+    int     _urlLen   = 10;
     String  _content;
     String  _lines[200];
     int     _lineCount = 0;

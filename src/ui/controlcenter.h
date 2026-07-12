@@ -38,6 +38,7 @@ private:
     uint8_t _fontSize   = 2;    // 1-3
     bool    _loraOn     = true;
     bool    _wifiOn     = false;
+    bool    _gpsOn      = true;
 
     static constexpr int PANEL_H = 280;
     static constexpr int PANEL_W = EPD_W;

@@ -1,21 +1,29 @@
-# PocketOS — LILYGO T5S3 4.7" E-Paper
+# PocketOS — LILYGO T5 E-Paper S3 Pro
 
-Kompletní handheld e-paper OS pro LILYGO T5S3 4.7" s LoRa.
+Kompletní handheld e-paper OS pro **LILYGO T5 E-Paper S3 Pro** (4.7" ED047TC1,
+ESP32-S3, LoRa SX1262, GPS, RTC, battery gauge).
+
+> **v1.1** – přechod z (nefunkčního) IT8951/SPI ovladače na **FastEPD**
+> (paralelní panel ED047TC1 + TPS65185 PMU), reálný pinout desky a 4 nové appky.
 
 ## Funkce
 
 | App | Popis |
 |-----|-------|
-| **Books** | Čtečka knih (.txt ze SD karty), stránkování přejetím |
-| **Maps** | Offline vektorové mapy z SD, GPS tracking, zoom |
-| **LoRa** | LoRa messenger s klávesnicí na displeji |
-| **Settings** | Jas, font, LoRa frekvence, sleep timer |
-| **Clock** | Analogové/digitální hodiny + kalendář |
-| **Chess** | Šachy s AI (minimax hloubka 2) |
+| **Books** | Čtečka knih (.txt i **.epub** ze SD), kapitoly, reflow, velikost písma |
+| **Maps** | Offline dlaždicové mapy z SD, GPS tracking, zoom |
+| **LoRa** | LoRa messenger s klávesnicí na displeji (SX1262) |
+| **Settings** | Jas, font, **Wi-Fi setup (sken + heslo)**, LoRa frekvence, GPS, timezone, sleep |
+| **Clock** | Analogové/digitální hodiny + kalendář (z RTC PCF8563) |
+| **Chess** | Šachy s AI (minimax) |
 | **Conquest** | Tahová hex strategie (Polytopia-like) |
-| **Browser** | Text-mode HTTP browser (potřebuje WiFi) |
+| **Browser** | Text-mode HTTP/HTTPS browser, výchozí **google.com** (potřebuje Wi-Fi) |
 | **Notes** | Poznámky uložené na SD |
 | **Calculator** | Kalkulačka |
+| **Device Info** | **ADI** – kompletní live info: SoC, paměť, baterie (BQ25896), radia, GPS, RTC |
+| **Sketch** | Kreslení prstem na e-ink, uložení do BMP na SD |
+| **Sudoku** | Offline hlavolam |
+| **Files** | Správce SD karty (procházení, náhled textu, mazání) |
 
 ## UI — iOS-like
 
@@ -28,25 +36,32 @@ Kompletní handheld e-paper OS pro LILYGO T5S3 4.7" s LoRa.
 
 | Komponenta | Popis |
 |-----------|-------|
-| MCU | ESP32-S3 (dual-core 240MHz, 8MB PSRAM) |
-| Display | 4.7" IT8951 e-paper, 960×540px |
-| Touch | GT911 capacitive |
-| LoRa | SX1262 (868/915 MHz) |
-| GPS | NEO-6M nebo kompatibilní přes UART2 |
-| Storage | MicroSD (SPI) |
-| Frontlight | PWM LED, 0-255 |
+| MCU | ESP32-S3-WROOM-1 (dual-core 240MHz, 16MB flash, 8MB PSRAM) |
+| Display | 4.7" **ED047TC1** paralelní e-paper, 960×540, 16 gray (FastEPD + TPS65185) |
+| Touch | GT911 capacitive (sdílená I2C) |
+| LoRa | SX1262 (433/868/915 MHz) |
+| GPS | u-blox MIA-M10Q přes UART2 |
+| RTC | PCF8563 |
+| Battery | BQ25896 charger/gauge (I2C) |
+| Storage | MicroSD (sdílená SPI s LoRa) |
 
-## Pinout (config.h)
+## Pinout (config.h → z LilyGO `docs/pin_define.md`)
 
 ```
-EPD SPI:    MOSI=11  MISO=13  SCK=12  CS=15  RST=16  BUSY=17
-Touch I2C:  SDA=21   SCL=22   INT=38
-SD Card:    CS=10  (sdílí SPI s EPD)
-LoRa SPI:   MOSI=41  MISO=42  SCK=40  CS=8   RST=18  DIO1=45  BUSY=46
-GPS UART2:  RX=44  TX=43
-Frontlight: PWM=48
-Battery:    ADC=1
+I2C (touch+RTC+PMU):  SDA=39  SCL=40
+Touch GT911:          INT=3   RST=9   (addr 0x14 / 0x5D)
+RTC PCF8563:          IRQ=2   (addr 0x51)
+Battery BQ25896:      addr 0x6B
+SPI (SD + LoRa):      MISO=21 MOSI=13 SCLK=14
+SD Card:              CS=12
+LoRa SX1262:          CS=46   RST=1   DIO1=10  BUSY=47
+GPS UART2:            RX=44   TX=43
+ED047 data bus:       D0=5 D1=6 D2=7 D3=15 D4=16 D5=17 D6=18 D7=8
+ED047 control:        CKV=48  STH=41  LEH=42  STV=45  CKH=4   (řídí FastEPD)
 ```
+
+> Display + PMU řídí knihovna **FastEPD** přes profil `BB_PANEL_EPDIY_V7`
+> (vendornutá v `lib/FastEPD/`). Displej nemá frontlight – GPIO11 je eink DC/DC power.
 
 ## SD karta — struktura
 

@@ -1,214 +1,79 @@
 #include "epd.h"
+#include <Arduino.h>
+#include <FastEPD.h>
 
-// ESP32-S3: FSPI=0 (SPI2), HSPI=1 (SPI3). EPD is on SPI0 pins → use FSPI.
-SPIClass EPD::_spi(0);
-
-// IT8951 SPI preambles
-#define PRE_CMD  0x6000
-#define PRE_WR   0x0000
-#define PRE_RD   0x1000
-
-// IT8951 registers / commands
-#define IT8951_TCON_SYS_RUN    0x0001
-#define IT8951_TCON_STANDBY    0x0002
-#define IT8951_TCON_SLEEP      0x0003
-#define IT8951_TCON_LD_IMG     0x0020
-#define IT8951_TCON_LD_IMG_AREA 0x0021
-#define IT8951_TCON_LD_IMG_END 0x0022
-#define IT8951_I80CPCR         0x0004
-#define IT8951_LISAR           0x0208  // Load image start address register
-
-#define REG_BASE   0x1000
-#define MCSR       (REG_BASE + 0x0000)
-#define LISAR_L    (REG_BASE + 0x0208)
-#define LISAR_H    (REG_BASE + 0x020A)
-
-#define SPI_FREQ   10000000  // 10 MHz — safer for IT8951 over long cables
+// One static FastEPD instance for the whole system.
+static FASTEPD s_epd;
 
 EPD& EPD::instance() {
     static EPD inst;
     return inst;
 }
 
-bool EPD::waitBusy(uint32_t timeoutMs) {
-    // IT8951 HRDY: HIGH = busy, LOW = ready (LILYGO board inverts the signal)
-    uint32_t start = millis();
-    while (digitalRead(EPD_BUSY) == HIGH) {
-        if (millis() - start > timeoutMs) {
-            Serial.println("[EPD] waitBusy TIMEOUT");
-            return false;
-        }
-        delay(1);
-    }
-    return true;
-}
-
-void EPD::writeCmd(uint16_t cmd) {
-    waitBusy();
-    _spi.beginTransaction(SPISettings(SPI_FREQ, MSBFIRST, SPI_MODE0));
-    digitalWrite(EPD_CS, LOW);
-    _spi.transfer16(PRE_CMD);
-    _spi.transfer16(cmd);
-    digitalWrite(EPD_CS, HIGH);
-    _spi.endTransaction();
-}
-
-void EPD::writeWord(uint16_t data) {
-    waitBusy();
-    _spi.beginTransaction(SPISettings(SPI_FREQ, MSBFIRST, SPI_MODE0));
-    digitalWrite(EPD_CS, LOW);
-    _spi.transfer16(PRE_WR);
-    _spi.transfer16(data);
-    digitalWrite(EPD_CS, HIGH);
-    _spi.endTransaction();
-}
-
-uint16_t EPD::readWord() {
-    waitBusy();
-    _spi.beginTransaction(SPISettings(SPI_FREQ, MSBFIRST, SPI_MODE0));
-    digitalWrite(EPD_CS, LOW);
-    _spi.transfer16(PRE_RD);
-    _spi.transfer16(0);  // dummy word required by IT8951
-    uint16_t v = _spi.transfer16(0);
-    digitalWrite(EPD_CS, HIGH);
-    _spi.endTransaction();
-    return v;
-}
-
-uint16_t EPD::sendCmdArg(uint16_t cmd, const uint16_t* args, int n) {
-    writeCmd(cmd);
-    for (int i = 0; i < n - 1; i++) writeWord(args[i]);
-    if (n > 0) {
-        writeWord(args[n - 1]);
-        return readWord();
-    }
-    return 0;
-}
-
 bool EPD::begin() {
-    pinMode(EPD_CS,   OUTPUT); digitalWrite(EPD_CS,   HIGH);
-    pinMode(EPD_RST,  OUTPUT);
-    pinMode(EPD_BUSY, INPUT);
+    // BB_PANEL_EPDIY_V7 is the profile that matches the T5 E-Paper S3 Pro (H752):
+    // ED047 data bus {5,6,7,15,16,17,18,8}, STV45/CKV48/STH41/LEH42/CKH4, I2C 39/40.
+    // 26.6 MHz bus clock, exactly as the vendor getting_started example uses.
+    int rc = s_epd.initPanel(BB_PANEL_EPDIY_V7, 26666666);
+    s_epd.setPanelSize(EPD_W, EPD_H);
+    s_epd.setMode(BB_MODE_4BPP);           // 16-level grayscale, 0=black 15=white
+    s_epd.fillScreen(C_WHITE);
+    s_epd.fullUpdate(CLEAR_SLOW);          // clean the panel once at boot
 
-    _spi.begin(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS);
+    _panelW = s_epd.width();
+    _panelH = s_epd.height();
+    _ok = (rc == BBEP_SUCCESS);
 
-    // Hardware reset — longer pulse for reliable IT8951 init
-    digitalWrite(EPD_RST, LOW);  delay(200);
-    digitalWrite(EPD_RST, HIGH); delay(200);
-
-    if (!waitBusy(5000)) {
-        Serial.println("[EPD] Not responding after reset");
-        return false;
-    }
-
-    // SYS_RUN must come before GetDeviceInfo
-    writeCmd(IT8951_TCON_SYS_RUN);
-    delay(10);
-
-    // Get device info (cmd 0x0302)
-    writeCmd(0x0302);
-    uint16_t w     = readWord();  // panel width
-    uint16_t h     = readWord();  // panel height
-    uint16_t addrL = readWord();  // imgBufAddr low word
-    uint16_t addrH = readWord();  // imgBufAddr high word
-    // skip firmware version (8 words) + LUT version (8 words)
-    for (int i = 0; i < 16; i++) readWord();
-
-    _panelW     = w ? w : EPD_W;
-    _panelH     = h ? h : EPD_H;
-    _imgBufAddr = ((uint32_t)addrH << 16) | addrL;  // correct byte order
-
-    Serial.printf("[EPD] panel=%dx%d imgBuf=0x%08X\n", _panelW, _panelH, _imgBufAddr);
-
-    // VCOM: set to -2.0V (typical for LILYGO 4.7" panel = 2000)
-    writeCmd(0x0039);
-    writeWord(2000);
-
-    // Set image buffer base address
-    writeCmd(0x0021);
-    writeWord((uint16_t)(_imgBufAddr & 0xFFFF));
-    writeCmd(0x0022);
-    writeWord((uint16_t)(_imgBufAddr >> 16));
-
-    // Setup frontlight PWM
-    ledcSetup(FRONTLIGHT_CH, FRONTLIGHT_FREQ, FRONTLIGHT_RES);
-    ledcAttachPin(FRONTLIGHT_PIN, FRONTLIGHT_CH);
-    ledcWrite(FRONTLIGHT_CH, 0);
-
-    clear();
+    Serial.printf("[EPD] FastEPD panel %dx%d rc=%d\n", _panelW, _panelH, rc);
+    // Even on a non-zero rc we keep going: the UI is usable and this lets the
+    // device boot for debugging instead of hanging on a blank screen.
     return true;
 }
 
-void EPD::setFrontlight(uint8_t brightness) {
-    ledcWrite(FRONTLIGHT_CH, brightness);
-}
-
-void EPD::loadImgArea(const uint8_t* data, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
-    // Set image buffer address registers
-    writeCmd(0x0021);
-    writeWord((uint16_t)(_imgBufAddr & 0xFFFF));
-    writeCmd(0x0022);
-    writeWord((uint16_t)(_imgBufAddr >> 16));
-
-    // Load image area command: rotation=0, bpp=4bpp(2), bigend=0
-    uint16_t args[] = { 0x0002, x, y, w, h };
-    writeCmd(IT8951_TCON_LD_IMG_AREA);
-    for (auto a : args) writeWord(a);
-
-    // Stream pixel data — IT8951 expects 4bpp packed (2 pixels/byte)
-    waitBusy();
-    _spi.beginTransaction(SPISettings(SPI_FREQ, MSBFIRST, SPI_MODE0));
-    digitalWrite(EPD_CS, LOW);
-    _spi.transfer16(PRE_WR);
-
-    for (int row = 0; row < h; row++) {
-        const uint8_t* line = data + (size_t)(y + row) * _panelW + x;
-        for (int col = 0; col < w; col += 2) {
-            // Convert 8bpp (0-15) to 4bpp packed: high nibble = left pixel
-            uint8_t hi = (line[col]     & 0x0F) << 4;
-            uint8_t lo = (col + 1 < w) ? (line[col + 1] & 0x0F) : 0;
-            _spi.transfer(hi | lo);
+// Pack Canvas' 8bpp (0-15) framebuffer region into FastEPD's 4bpp buffer.
+// Layout for rotation 0: byte = (x>>1) + y*(width/2); even x -> high nibble.
+static void copyRegion(const uint8_t* fb, int x, int y, int w, int h) {
+    uint8_t* dst = s_epd.currentBuffer();
+    if (!dst) return;
+    const int pitch = EPD_W >> 1;
+    for (int row = y; row < y + h; row++) {
+        const uint8_t* src = fb + (size_t)row * EPD_W;
+        uint8_t*       d   = dst + (size_t)row * pitch;
+        for (int col = x; col < x + w; col++) {
+            uint8_t v = src[col] & 0x0F;
+            int idx = col >> 1;
+            if (col & 1) d[idx] = (d[idx] & 0xF0) | v;
+            else         d[idx] = (d[idx] & 0x0F) | (v << 4);
         }
     }
-
-    digitalWrite(EPD_CS, HIGH);
-    _spi.endTransaction();
-
-    writeCmd(IT8951_TCON_LD_IMG_END);
-}
-
-void EPD::displayArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h, EPDMode mode) {
-    writeCmd(0x0034);  // DPY_AREA
-    writeWord(x);
-    writeWord(y);
-    writeWord(w);
-    writeWord(h);
-    writeWord((uint16_t)mode);
 }
 
 void EPD::clear() {
-    // Fill with white using INIT waveform
-    size_t sz = (size_t)_panelW * _panelH;
-    uint8_t* tmp = (uint8_t*)heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
-    if (tmp) {
-        memset(tmp, C_WHITE, sz);
-        loadImgArea(tmp, 0, 0, _panelW, _panelH);
-        displayArea(0, 0, _panelW, _panelH, EPD_INIT);
-        free(tmp);
-    }
+    s_epd.fillScreen(C_WHITE);
+    s_epd.fullUpdate(CLEAR_SLOW);
 }
 
 void EPD::flushFull(const uint8_t* fb, EPDMode mode) {
-    loadImgArea(fb, 0, 0, _panelW, _panelH);
-    displayArea(0, 0, _panelW, _panelH, mode);
+    copyRegion(fb, 0, 0, EPD_W, EPD_H);
+    // CLEAR_FAST = 8 black/white passes: crisp grayscale full refresh (~1s).
+    s_epd.fullUpdate(CLEAR_FAST);
 }
 
 void EPD::flushRegion(const uint8_t* fb, int x, int y, int w, int h, EPDMode mode) {
-    // Align to even x for 4bpp packing
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > EPD_W) w = EPD_W - x;
+    if (y + h > EPD_H) h = EPD_H - y;
+    if (w <= 0 || h <= 0) return;
+    // even-align x for nibble packing
     if (x & 1) { x--; w++; }
-    if (w & 1) w++;
-    if (x + w > _panelW) w = _panelW - x;
-    if (y + h > _panelH) h = _panelH - y;
-    loadImgArea(fb, x, y, w, h);
-    displayArea(x, y, w, h, mode);
+    copyRegion(fb, x, y, w, h);
+    BB_RECT r; r.x = x; r.y = y; r.w = w; r.h = h;
+    s_epd.fullUpdate(CLEAR_FAST, false, &r);   // regional grayscale update
+}
+
+void EPD::setFrontlight(uint8_t brightness) {
+    // GPIO11 on this board is the eink DC/DC power enable (driven by FastEPD),
+    // NOT a frontlight — so we only remember the value for the UI/ADI app.
+    _frontlight = brightness;
 }

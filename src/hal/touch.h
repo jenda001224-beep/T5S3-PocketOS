@@ -26,6 +26,10 @@ private:
     Touch() = default;
     bool    readGT911(uint8_t* buf, uint16_t reg, uint8_t len);
     void    writeGT911(uint16_t reg, uint8_t val);
+    bool    probe(uint8_t addr);
+    void    hwReset(bool pickPrimaryAddr);
+
+    uint8_t _addr = TOUCH_ADDR;
 
     TouchPoint _prev;
     uint32_t   _downTime    = 0;

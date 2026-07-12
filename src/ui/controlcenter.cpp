@@ -1,6 +1,9 @@
 #include "controlcenter.h"
 #include "canvas.h"
 #include "../hal/epd.h"
+#include "../hal/lora_hw.h"
+#include "../apps/settings.h"
+#include <WiFi.h>
 
 ControlCenter& ControlCenter::instance() {
     static ControlCenter inst;
@@ -8,6 +11,13 @@ ControlCenter& ControlCenter::instance() {
 }
 
 void ControlCenter::open() {
+    // Reflect the live system state whenever the panel is pulled down.
+    SystemConfig& c = SettingsApp::config();
+    _brightness = c.brightness;
+    _fontSize   = c.fontScale;
+    _wifiOn     = c.wifiEnabled;
+    _gpsOn      = c.gpsEnabled;
+    _loraOn     = LoRaHW::instance().enabled();
     _open = true;
     draw();
 }
@@ -68,7 +78,7 @@ void ControlCenter::draw() {
     // Toggles row
     drawToggle(PAD,               y, "LoRa",  _loraOn);
     drawToggle(PAD + 120,         y, "WiFi",  _wifiOn);
-    drawToggle(PAD + 240,         y, "GPS",   true);
+    drawToggle(PAD + 240,         y, "GPS",   _gpsOn);
     y += 60;
 
     // Sleep button
@@ -92,16 +102,22 @@ bool ControlCenter::handleEvent(const TouchEvent& ev) {
         // Outside panel — close
         if (ty > PANEL_H) { close(); return true; }
 
+        SystemConfig& c = SettingsApp::config();
+
         // Brightness slider
         if (ty >= 60 && ty <= 80 && tx >= PAD && tx < EPD_W - PAD) {
             _brightness = (uint8_t)(((float)(tx - PAD) / (EPD_W - 2*PAD)) * 255);
             EPD::instance().setFrontlight(_brightness);
+            c.brightness = _brightness;
+            SettingsApp::saveConfigStatic();
             draw();
             return true;
         }
         // Font size slider
         if (ty >= 120 && ty <= 140 && tx >= PAD && tx < EPD_W - PAD) {
             _fontSize = 1 + (uint8_t)(((float)(tx - PAD) / (EPD_W - 2*PAD)) * 3);
+            c.fontScale = _fontSize;
+            SettingsApp::saveConfigStatic();
             draw();
             return true;
         }
@@ -110,12 +126,25 @@ bool ControlCenter::handleEvent(const TouchEvent& ev) {
         // LoRa toggle
         if (ty >= toggleY && ty < toggleY + 30 && tx >= PAD && tx < PAD + 60) {
             _loraOn = !_loraOn;
+            LoRaHW::instance().setEnabled(_loraOn);
             draw();
             return true;
         }
         // WiFi toggle
         if (ty >= toggleY && ty < toggleY + 30 && tx >= PAD+120 && tx < PAD+180) {
             _wifiOn = !_wifiOn;
+            c.wifiEnabled = _wifiOn;
+            if (_wifiOn) { if (c.wifiSSID[0]) WiFi.begin(c.wifiSSID, c.wifiPass); }
+            else WiFi.disconnect(true);
+            SettingsApp::saveConfigStatic();
+            draw();
+            return true;
+        }
+        // GPS toggle
+        if (ty >= toggleY && ty < toggleY + 30 && tx >= PAD+240 && tx < PAD+300) {
+            _gpsOn = !_gpsOn;
+            c.gpsEnabled = _gpsOn;
+            SettingsApp::saveConfigStatic();
             draw();
             return true;
         }

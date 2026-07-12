@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <time.h>
+#include <sys/time.h>
 #include "config.h"
 
 // HAL
@@ -7,6 +10,7 @@
 #include "hal/storage.h"
 #include "hal/lora_hw.h"
 #include "hal/gps_hw.h"
+#include "hal/power_hw.h"
 
 // UI
 #include "ui/canvas.h"
@@ -29,6 +33,10 @@
 #include "apps/notes.h"
 #include "apps/calculator.h"
 #include "apps/browser.h"
+#include "apps/adi.h"
+#include "apps/sketch.h"
+#include "apps/sudoku.h"
+#include "apps/files.h"
 
 // ─── App instances ────────────────────────────────────────────────────────────
 static ClockApp      clockApp;
@@ -41,6 +49,10 @@ static SettingsApp   settingsApp;
 static NotesApp      notesApp;
 static CalculatorApp calcApp;
 static BrowserApp    browserApp;
+static AdiApp        adiApp;
+static SketchApp     sketchApp;
+static SudokuApp     sudokuApp;
+static FilesApp      filesApp;
 
 // ─── App registry for home screen (order = appearance on screen) ──────────────
 // First 4 entries appear in the dock.
@@ -58,7 +70,10 @@ static const AppEntry APPS[] = {
     { "Browser",    ICON_BROWSER,   BROWSER_APP_ID    },
     { "Notes",      ICON_NOTES,     NOTES_APP_ID      },
     { "Calculator", ICON_CALC,      CALC_APP_ID       },
-    { "Weather",    ICON_WEATHER,   CLOCK_APP_ID      },  // placeholder
+    { "Device Info",ICON_INFO,      ADI_APP_ID        },
+    { "Sketch",     ICON_SKETCH,    SKETCH_APP_ID     },
+    { "Sudoku",     ICON_SUDOKU,    SUDOKU_APP_ID     },
+    { "Files",      ICON_FILES,     FILES_APP_ID      },
 };
 static constexpr int APP_COUNT = sizeof(APPS) / sizeof(APPS[0]);
 
@@ -72,8 +87,8 @@ void splashScreen() {
     cv.drawTextCentered(cx, cy - 14, 200, "Pocket", C_WHITE, C_BLACK, 3);
     cv.drawTextCentered(cx, cy + 18, 200, "OS",     C_WHITE, C_BLACK, 3);
 
-    cv.drawTextCentered(cx, cy + 80, EPD_W, "LILYGO T5S3 4.7\" E-Paper", C_MID, C_WHITE, 1);
-    cv.drawTextCentered(cx, cy + 96, EPD_W, "v1.0  — Booting...",        C_MID, C_WHITE, 1);
+    cv.drawTextCentered(cx, cy + 80, EPD_W, "LILYGO T5 E-Paper S3 Pro", C_MID, C_WHITE, 1);
+    cv.drawTextCentered(cx, cy + 96, EPD_W, "v1.1  — Booting...",        C_MID, C_WHITE, 1);
 
     cv.flushFull();
 }
@@ -103,16 +118,29 @@ void setup() {
         Serial.println("SD mount failed — continuing without SD");
     }
 
-    // ── Touch ─────────────────────────────────────────────────────────────────
+    // ── Touch (shares I2C with FastEPD's expander) ────────────────────────────
     if (!Touch::instance().begin()) {
         Serial.println("Touch init failed");
     }
 
-    // ── Load config (needs SD) ────────────────────────────────────────────────
-    SettingsApp::config();  // triggers loadConfig via onEnter first call
+    // ── Power: BQ25896 battery ADC + PCF8563 RTC (same I2C bus) ────────────────
+    Power::instance().begin();
 
-    // ── Apply saved brightness ────────────────────────────────────────────────
+    // ── Load config from SD (needs it now, before any app opens) ──────────────
+    SettingsApp::loadConfigStatic();
     EPD::instance().setFrontlight(SettingsApp::config().brightness);
+
+    // ── Timezone + clock: seed system time from the RTC, refine later via NTP ──
+    setenv("TZ", SettingsApp::config().timezone, 1);
+    tzset();
+    {
+        struct tm rt;
+        if (Power::instance().getTime(rt)) {
+            time_t t = mktime(&rt);
+            struct timeval tv = { t, 0 };
+            settimeofday(&tv, nullptr);
+        }
+    }
 
     // ── GPS ───────────────────────────────────────────────────────────────────
     GPSHW::instance().begin();
@@ -120,13 +148,29 @@ void setup() {
     // ── LoRa ─────────────────────────────────────────────────────────────────
     if (!LoRaHW::instance().begin()) {
         Serial.println("LoRa init failed");
+    } else {
+        LoRaHW::instance().setFrequency(SettingsApp::config().loraFreq);
     }
 
-    // ── WiFi (lazy — browser app connects on demand) ──────────────────────────
+    // ── WiFi: auto-connect if enabled & saved; sync NTP -> RTC when it lands ──
     WiFi.mode(WIFI_STA);
-
-    // ── NTP time sync ─────────────────────────────────────────────────────────
-    configTzTime(SettingsApp::config().timezone, "pool.ntp.org", "time.nist.gov");
+    SystemConfig& cfg = SettingsApp::config();
+    if (cfg.wifiEnabled && cfg.wifiSSID[0]) {
+        WiFi.begin(cfg.wifiSSID, cfg.wifiPass);
+        uint32_t t0 = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 6000) delay(150);
+    }
+    configTzTime(cfg.timezone, "pool.ntp.org", "time.nist.gov");
+    if (WiFi.status() == WL_CONNECTED) {
+        // give SNTP a moment, then persist the accurate time into the RTC
+        uint32_t t0 = millis();
+        while (time(nullptr) < 1700000000 && millis() - t0 < 4000) delay(150);
+        if (time(nullptr) > 1700000000) {
+            time_t now = time(nullptr);
+            struct tm lt; localtime_r(&now, &lt);
+            Power::instance().setTime(lt);
+        }
+    }
 
     // ── Register apps ─────────────────────────────────────────────────────────
     AppManager& am = AppManager::instance();
@@ -140,6 +184,10 @@ void setup() {
     am.registerApp(&notesApp);
     am.registerApp(&calcApp);
     am.registerApp(&browserApp);
+    am.registerApp(&adiApp);
+    am.registerApp(&sketchApp);
+    am.registerApp(&sudokuApp);
+    am.registerApp(&filesApp);
 
     // ── Home screen ───────────────────────────────────────────────────────────
     HomeScreen::instance().begin(APPS, APP_COUNT);

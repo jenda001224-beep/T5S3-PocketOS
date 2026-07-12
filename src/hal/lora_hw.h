@@ -15,6 +15,9 @@ class LoRaHW {
 public:
     static LoRaHW& instance();
     bool   begin();
+    bool   setFrequency(float mhz);   // live retune (Settings)
+    void   setEnabled(bool on);       // radio sleep / resume (Control Center)
+    bool   enabled() const { return _enabled; }
     bool   send(const String& msg);
     bool   available();
     LoRaPacket receive();
@@ -24,9 +27,9 @@ public:
 
 private:
     LoRaHW() = default;
-    static SPIClass _spi;
     static SX1262   _radio;
     bool   _ready    = false;
+    bool   _enabled  = true;
     bool   _hasPacket = false;
     int8_t _lastRSSI = 0;
     float  _lastSNR  = 0;

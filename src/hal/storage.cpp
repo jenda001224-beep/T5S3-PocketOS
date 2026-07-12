@@ -6,12 +6,14 @@ Storage& Storage::instance() {
 }
 
 bool Storage::begin() {
-    SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, SD_CS);
-    _mounted = SD.begin(SD_CS, SPI, 40000000);
+    // SD shares the board SPI bus with the LoRa radio (MISO21 MOSI13 SCLK14).
+    SPI.begin(BOARD_SPI_SCLK, BOARD_SPI_MISO, BOARD_SPI_MOSI, SD_CS);
+    _mounted = SD.begin(SD_CS, SPI, 20000000);
     if (_mounted) {
         ensureDir(BOOKS_PATH);
         ensureDir(MAPS_PATH);
         ensureDir(NOTES_PATH);
+        ensureDir(SKETCH_PATH);
         ensureDir("/pocket/saves");
     }
     return _mounted;

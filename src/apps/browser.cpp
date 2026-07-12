@@ -2,6 +2,7 @@
 #include "../ui/canvas.h"
 #include "../os/appmanager.h"
 #include "../apps/settings.h"
+#include <WiFiClientSecure.h>
 
 const char* BrowserApp::KBD_ROWS[] = {
     "1234567890",
@@ -55,16 +56,43 @@ void BrowserApp::navigate() {
     _state = LOADING;
     draw();
 
-    if (!SettingsApp::config().wifiEnabled) {
-        snprintf(_error, sizeof(_error), "WiFi disabled in Settings");
+    SystemConfig& cfg = SettingsApp::config();
+    if (!cfg.wifiEnabled || cfg.wifiSSID[0] == 0) {
+        snprintf(_error, sizeof(_error), "Enable Wi-Fi in Settings first");
         _state = ERROR_STATE;
         draw();
         return;
     }
 
+    // Make sure we are connected (connect on demand, wait up to ~8 s).
+    if (WiFi.status() != WL_CONNECTED) {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(cfg.wifiSSID, cfg.wifiPass);
+        uint32_t t0 = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(200);
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+        snprintf(_error, sizeof(_error), "Wi-Fi not connected");
+        _state = ERROR_STATE;
+        draw();
+        return;
+    }
+
+    // Build a full URL (default to https which is what google.com needs).
+    String url = _url;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
+
+    WiFiClientSecure secure;
+    secure.setInsecure();          // no cert store on device
+    WiFiClient plain;
+
     HTTPClient http;
-    http.begin(_url);
-    http.addHeader("User-Agent", "PocketOS/1.0");
+    bool https = url.startsWith("https://");
+    if (https) http.begin(secure, url);
+    else       http.begin(plain, url);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setTimeout(9000);
+    http.addHeader("User-Agent", "Mozilla/5.0 (PocketOS)");
     http.addHeader("Accept", "text/html");
     int code = http.GET();
 
