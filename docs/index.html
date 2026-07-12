@@ -101,6 +101,29 @@
   #log .err { color: #000; font-weight: 600; text-decoration: underline; }
   #log .info{ color: #555; }
 
+  .divider { border-top: 1px solid #e0e0e0; margin: 28px 0 24px; }
+
+  .mon-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  #mon-btn {
+    flex: 1; padding: 16px; background: #000; color: #fff; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  #mon-btn:hover { opacity: 0.75; }
+  #mon-btn.active { background: #fff; color: #000; border: 2px solid #000; }
+  .secondary {
+    padding: 16px 18px; background: #fff; color: #000; border: 2px solid #000;
+    border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  .secondary:hover { opacity: 0.6; }
+  #serlog {
+    border-radius: 8px; padding: 14px 16px;
+    font-family: "SF Mono", "Fira Code", monospace; font-size: 12px;
+    line-height: 1.65; max-height: 320px; overflow-y: auto; min-height: 90px;
+    background: #0b0b0b; color: #d6d6d6; white-space: pre-wrap; word-break: break-word;
+  }
+  #serlog .sok { color: #7CFC7C; }
+  #serlog .serr{ color: #ff7b7b; }
+
   .footer {
     margin-top: 20px;
     font-size: 11px;
@@ -140,6 +163,19 @@
   </div>
 
   <div id="log"><span class="info">Ready. Click Flash to begin.</span></div>
+
+  <div class="divider"></div>
+
+  <h1 style="font-size:20px;">Serial Monitor</h1>
+  <p class="subtitle" style="margin-bottom:16px;">
+    See what the device prints (115200 baud). Click Connect, then press the
+    <strong>RST</strong> button on the device to capture the full boot log.
+  </p>
+  <div class="mon-row">
+    <button id="mon-btn">Connect Serial Monitor</button>
+    <button id="mon-clear" class="secondary">Clear</button>
+  </div>
+  <div id="serlog">Serial monitor idle.</div>
 
   <div class="footer">
     <a href="https://github.com/jenda001224-beep/T5S3-PocketOS" target="_blank">GitHub</a>
@@ -260,6 +296,71 @@ btn.addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+// ─── Serial Monitor (Web Serial) ─────────────────────────────────────────────
+const monBtn   = document.getElementById("mon-btn");
+const monClear = document.getElementById("mon-clear");
+const serlog   = document.getElementById("serlog");
+
+let monPort = null, monReader = null, monKeep = false, monReadable = null;
+
+function serLog(msg, cls = "") {
+  const atBottom = serlog.scrollTop + serlog.clientHeight >= serlog.scrollHeight - 4;
+  const span = document.createElement("span");
+  if (cls) span.className = cls;
+  span.textContent = msg;
+  serlog.appendChild(span);
+  if (atBottom) serlog.scrollTop = serlog.scrollHeight;
+}
+
+monClear.addEventListener("click", () => { serlog.textContent = ""; });
+
+async function stopMonitor() {
+  monKeep = false;
+  try { if (monReader) { await monReader.cancel(); } } catch (e) {}
+  try { if (monReadable) { await monReadable.catch(() => {}); } } catch (e) {}
+  try { if (monPort) { await monPort.close(); } } catch (e) {}
+  monPort = null; monReader = null; monReadable = null;
+  monBtn.textContent = "Connect Serial Monitor";
+  monBtn.classList.remove("active");
+}
+
+async function startMonitor() {
+  if (!("serial" in navigator)) { serLog("\nWeb Serial not supported — use Chrome/Edge.\n", "serr"); return; }
+  try {
+    monPort = await navigator.serial.requestPort();
+    await monPort.open({ baudRate: 115200 });
+    // Nudge the reset lines (works on UART bridges; harmless on native USB-CDC)
+    try {
+      await monPort.setSignals({ dataTerminalReady: false, requestToSend: true });
+      await new Promise(r => setTimeout(r, 120));
+      await monPort.setSignals({ requestToSend: false });
+    } catch (e) {}
+
+    monKeep = true;
+    monBtn.textContent = "Disconnect";
+    monBtn.classList.add("active");
+    serLog("\n── connected @115200 — press RST on the device now ──\n", "sok");
+
+    const decoder = new TextDecoderStream();
+    monReadable = monPort.readable.pipeTo(decoder.writable).catch(() => {});
+    monReader = decoder.readable.getReader();
+    while (monKeep) {
+      const { value, done } = await monReader.read();
+      if (done) break;
+      if (value) serLog(value);
+    }
+  } catch (err) {
+    serLog("\nmonitor error: " + err.message + "\n", "serr");
+  } finally {
+    if (monKeep) await stopMonitor();
+  }
+}
+
+monBtn.addEventListener("click", () => {
+  if (monPort) stopMonitor();
+  else startMonitor();
 });
 </script>
 </body>
