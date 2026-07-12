@@ -32,6 +32,11 @@
     margin-bottom: 6px;
   }
   h1 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  #fw-version {
+    display: inline-block; font-size: 12px; font-weight: 600; color: #000;
+    background: #f0f0f0; border: 1px solid #ddd; border-radius: 6px;
+    padding: 5px 10px; margin-bottom: 20px;
+  }
   .subtitle { color: #555; font-size: 14px; margin-bottom: 32px; line-height: 1.6; }
 
   #no-serial-warn {
@@ -137,6 +142,7 @@
 <div class="card">
   <div class="logo">LILYGO T5 E-Paper S3 Pro</div>
   <h1>PocketOS Flasher</h1>
+  <div id="fw-version">Firmware: PocketOS v1.1 · FastEPD · 40&nbsp;MHz flash · build 2026-07-13</div>
   <p class="subtitle">
     PocketOS v1.1 — FastEPD display driver, correct pinout, and 14 apps
     (Books · Maps · LoRa · Clock · Chess · Conquest · Browser · Notes ·
@@ -303,7 +309,8 @@ const monBtn   = document.getElementById("mon-btn");
 const monClear = document.getElementById("mon-clear");
 const serlog   = document.getElementById("serlog");
 
-let monPort = null, monReader = null, monKeep = false, monReadable = null;
+let monPort = null, monReader = null, monKeep = false;
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 function serLog(msg, cls = "") {
   const atBottom = serlog.scrollTop + serlog.clientHeight >= serlog.scrollHeight - 4;
@@ -316,12 +323,47 @@ function serLog(msg, cls = "") {
 
 monClear.addEventListener("click", () => { serlog.textContent = ""; });
 
-async function stopMonitor() {
-  monKeep = false;
-  try { if (monReader) { await monReader.cancel(); } } catch (e) {}
-  try { if (monReadable) { await monReadable.catch(() => {}); } } catch (e) {}
-  try { if (monPort) { await monPort.close(); } } catch (e) {}
-  monPort = null; monReader = null; monReadable = null;
+// Read one open→read→close cycle. Returns when the port is lost or stopped.
+async function readCycle(port) {
+  await port.open({ baudRate: 115200 });
+  try { await port.setSignals({ dataTerminalReady: true, requestToSend: false }); } catch (e) {}
+  const decoder = new TextDecoderStream();
+  const piped = port.readable.pipeTo(decoder.writable).catch(() => {});
+  monReader = decoder.readable.getReader();
+  try {
+    while (monKeep) {
+      const { value, done } = await monReader.read();
+      if (done) break;
+      if (value) serLog(value);
+    }
+  } finally {
+    try { await monReader.cancel(); } catch (e) {}
+    try { monReader.releaseLock(); } catch (e) {}
+    try { await piped; } catch (e) {}
+    try { await port.close(); } catch (e) {}
+    monReader = null;
+  }
+}
+
+// Keeps the monitor attached across device resets (native USB-CDC drops on RST).
+async function runMonitor() {
+  monBtn.textContent = "Disconnect";
+  monBtn.classList.add("active");
+  serLog("\n── monitor armed @115200 — press RST now; it auto-reconnects on reset ──\n", "sok");
+  while (monKeep) {
+    try {
+      await readCycle(monPort);
+    } catch (e) {
+      // device not ready / lost during reset — fall through and retry
+    }
+    if (!monKeep) break;
+    // wait for the USB device to re-enumerate, then re-resolve the port handle
+    await sleep(350);
+    try {
+      const ports = await navigator.serial.getPorts();
+      if (ports.length) monPort = ports[0];
+    } catch (e) {}
+  }
   monBtn.textContent = "Connect Serial Monitor";
   monBtn.classList.remove("active");
 }
@@ -329,37 +371,19 @@ async function stopMonitor() {
 async function startMonitor() {
   if (!("serial" in navigator)) { serLog("\nWeb Serial not supported — use Chrome/Edge.\n", "serr"); return; }
   try {
-    monPort = await navigator.serial.requestPort();
-    await monPort.open({ baudRate: 115200 });
-    // Nudge the reset lines (works on UART bridges; harmless on native USB-CDC)
-    try {
-      await monPort.setSignals({ dataTerminalReady: false, requestToSend: true });
-      await new Promise(r => setTimeout(r, 120));
-      await monPort.setSignals({ requestToSend: false });
-    } catch (e) {}
+    monPort = await navigator.serial.requestPort();   // needs the click gesture
+  } catch (e) { return; }                             // user cancelled the picker
+  monKeep = true;
+  runMonitor();
+}
 
-    monKeep = true;
-    monBtn.textContent = "Disconnect";
-    monBtn.classList.add("active");
-    serLog("\n── connected @115200 — press RST on the device now ──\n", "sok");
-
-    const decoder = new TextDecoderStream();
-    monReadable = monPort.readable.pipeTo(decoder.writable).catch(() => {});
-    monReader = decoder.readable.getReader();
-    while (monKeep) {
-      const { value, done } = await monReader.read();
-      if (done) break;
-      if (value) serLog(value);
-    }
-  } catch (err) {
-    serLog("\nmonitor error: " + err.message + "\n", "serr");
-  } finally {
-    if (monKeep) await stopMonitor();
-  }
+async function stopMonitor() {
+  monKeep = false;
+  try { if (monReader) await monReader.cancel(); } catch (e) {}
 }
 
 monBtn.addEventListener("click", () => {
-  if (monPort) stopMonitor();
+  if (monKeep) stopMonitor();
   else startMonitor();
 });
 </script>

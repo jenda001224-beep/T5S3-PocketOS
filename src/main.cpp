@@ -93,6 +93,9 @@ void splashScreen() {
     cv.flushFull();
 }
 
+// Boot-time init results, surfaced in every heartbeat for easy diagnostics.
+static bool g_sdOk = false, g_touchOk = false;
+
 void setup() {
     Serial.begin(115200);
     // USB CDC needs ~1s to enumerate before output is visible
@@ -124,19 +127,15 @@ void setup() {
     // ── Storage ───────────────────────────────────────────────────────────────
     Serial.println("[BOOT] SD init...");
     Serial.flush();
-    if (!Storage::instance().begin()) {
-        Serial.println("[BOOT] SD mount failed — continuing without SD");
-    } else {
-        Serial.println("[BOOT] SD OK");
-    }
+    g_sdOk = Storage::instance().begin();
+    Serial.println(g_sdOk ? "[BOOT] SD OK" : "[BOOT] SD mount failed — continuing without SD");
     Serial.flush();
 
     // ── Touch (shares I2C with FastEPD's expander) ────────────────────────────
     Serial.println("[BOOT] Touch init...");
     Serial.flush();
-    if (!Touch::instance().begin()) {
-        Serial.println("[BOOT] Touch init FAILED");
-    }
+    g_touchOk = Touch::instance().begin();
+    if (!g_touchOk) Serial.println("[BOOT] Touch init FAILED");
     Serial.flush();
 
     // ── Power: BQ25896 battery ADC + PCF8563 RTC (same I2C bus) ────────────────
@@ -228,9 +227,11 @@ void loop() {
     static uint32_t lastHB = 0;
     if (millis() - lastHB > 3000) {
         lastHB = millis();
-        Serial.printf("[HB] up=%lus epd_ok=%d %dx%d heap=%uKB psram=%uKB\n",
+        Serial.printf("[HB] up=%lus epd=%d(%dx%d) sd=%d touch=%d bq=%d rtc=%d wifi=%d heap=%uKB psram=%uKB\n",
             millis()/1000, EPD::instance().ok(),
             EPD::instance().panelW(), EPD::instance().panelH(),
+            g_sdOk, g_touchOk, Power::instance().bqPresent(), Power::instance().rtcPresent(),
+            WiFi.status() == WL_CONNECTED,
             ESP.getFreeHeap()/1024, ESP.getFreePsram()/1024);
         Serial.flush();
     }
