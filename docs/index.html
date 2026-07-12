@@ -273,9 +273,9 @@ btn.addEventListener("click", async () => {
 
     await esploader.writeFlash({
       fileArray,
-      flashSize:  "keep",
-      flashFreq:  "keep",
-      flashMode:  "keep",
+      flashSize:  "16MB",
+      flashFreq:  "40m",   // 80 MHz caused an "invalid header" ROM boot loop on this board
+      flashMode:  "dio",
       eraseAll:   false,
       compress:   true,
       reportProgress(i, written, total) {
